@@ -30,8 +30,25 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
+        # Resolve depth directory for GT depth supervision
+        depth_dir = ""
+        depth_scale = 0.01
+        if getattr(args, 'use_gt_depth', False):
+            depth_dir = getattr(args, 'depth_dir', '') or ""
+            depth_scale = getattr(args, 'depth_scale', 0.01)
+            if not depth_dir:
+                # Auto-detect: look for 'depth' subdirectory in source path
+                candidate = os.path.join(args.source_path, "depth")
+                if os.path.isdir(candidate):
+                    depth_dir = candidate
+            if depth_dir:
+                print(f"GT depth enabled: {depth_dir} (scale={depth_scale})")
+            else:
+                print("WARNING: --use_gt_depth set but no depth directory found")
+
         if os.path.exists(os.path.join(args.source_path, "sparse")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval,
+                                                          depth_dir=depth_dir, depth_scale=depth_scale)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)

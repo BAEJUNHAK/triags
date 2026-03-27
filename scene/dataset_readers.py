@@ -29,6 +29,22 @@ class CameraInfo(NamedTuple):
     width: int
     height: int
     mask: np.array = None
+    gt_depth: np.array = None
+
+
+def load_gt_depth(image_name, depth_dir, depth_scale=0.01):
+    """Load GT depth for a given image name. Returns None if not found."""
+    if not depth_dir or not os.path.isdir(depth_dir):
+        return None
+    # Try common naming patterns
+    for pattern in [f"depth_raw_{image_name}.png", f"depth_{image_name}.png",
+                    f"{image_name}_depth.png", f"{image_name}.png"]:
+        depth_path = os.path.join(depth_dir, pattern)
+        if os.path.exists(depth_path):
+            depth_raw = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+            if depth_raw is not None:
+                return depth_raw.astype(np.float32) * depth_scale
+    return None
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -102,7 +118,7 @@ def read_pfm(filename: str):
     return data, scale
 
 
-def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
+def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, depth_dir="", depth_scale=0.01):
     cam_infos = []
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
@@ -136,8 +152,11 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         image_name = os.path.basename(image_path).split(".")[0]
         image = Image.open(image_path)
 
+        gt_depth = load_gt_depth(image_name, depth_dir, depth_scale) if depth_dir else None
+
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              gt_depth=gt_depth)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -177,7 +196,7 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
-def readColmapSceneInfo(path, images, eval, llffhold=8):
+def readColmapSceneInfo(path, images, eval, llffhold=8, depth_dir="", depth_scale=0.01):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse", "cameras.bin")
@@ -190,7 +209,9 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
     reading_dir = "images" if images == None else images
-    cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
+    cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
+                                           images_folder=os.path.join(path, reading_dir),
+                                           depth_dir=depth_dir, depth_scale=depth_scale)
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
 
     if eval:

@@ -30,7 +30,7 @@ class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
                  image_name, image_path, uid,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, ncc_scale=1.0, data_device = "cuda",
-                 ):
+                 gt_depth=None):
         super(Camera, self).__init__()
 
         self.uid = uid
@@ -63,6 +63,11 @@ class Camera(nn.Module):
             self.gt_mask = gt_alpha_mask.to(self.data_device)
         else:
             self.gt_mask = None
+
+        if gt_depth is not None:
+            self.gt_depth = gt_depth.to(self.data_device)
+        else:
+            self.gt_depth = None
 
         ncc_scale = ncc_scale if ncc_scale > 0 else 1.0
         self.ncc_scale = ncc_scale

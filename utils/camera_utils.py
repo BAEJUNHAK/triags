@@ -3,6 +3,7 @@ import numpy as np
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
 import torch
+import cv2
 
 WARNED = False
 
@@ -44,10 +45,18 @@ def loadCam(args, id, cam_info, resolution_scale):
         loaded_mask = None
         gt_image = resized_image_rgb
 
+    # Resize GT depth to match target resolution if available
+    gt_depth_tensor = None
+    if cam_info.gt_depth is not None:
+        # resolution is (W, H), cv2.resize expects (W, H) for dsize
+        resized_depth = cv2.resize(cam_info.gt_depth, resolution, interpolation=cv2.INTER_NEAREST)
+        gt_depth_tensor = torch.from_numpy(resized_depth).float()
+
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T,
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY,
                   image=gt_image, gt_alpha_mask=loaded_mask,
-                  image_name=cam_info.image_name, image_path=cam_info.image_path, ncc_scale=args.ncc_scale, uid=id, data_device=args.data_device)
+                  image_name=cam_info.image_name, image_path=cam_info.image_path, ncc_scale=args.ncc_scale, uid=id, data_device=args.data_device,
+                  gt_depth=gt_depth_tensor)
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):
     camera_list = []

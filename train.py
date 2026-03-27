@@ -84,7 +84,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_multi_view_geo_for_log = 0.0
     ema_multi_view_pho_for_log = 0.0
     ema_tgpc_loss_for_log = 0.0
+    ema_gt_depth_loss_for_log = 0.0
     geo_loss, ncc_loss, tgpc_loss = None, None, None
+    gt_depth_loss = torch.tensor(0.0, device="cuda")
+
+    use_gt_depth = getattr(dataset, 'use_gt_depth', False)
 
     require_depth = not dataset.use_coord_map
     require_coord = dataset.use_coord_map
@@ -130,7 +134,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         reg_kick_on = iteration >= opt.regularization_from_iter
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size, require_coord = require_coord and reg_kick_on, require_depth = require_depth and reg_kick_on, app_model=app_model)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size, require_coord = require_coord and reg_kick_on, require_depth = (require_depth or use_gt_depth) and reg_kick_on, app_model=app_model)
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
                                                                     render_pkg["render"],
@@ -168,6 +172,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image, gt_image.unsqueeze(0)))
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
+
+        # GT depth supervision
+        gt_depth_loss = torch.tensor(0.0, device="cuda")
+        if use_gt_depth and reg_kick_on and viewpoint_cam.gt_depth is not None:
+            rendered_expected_depth = render_pkg["expected_depth"]
+            rendered_depth = rendered_expected_depth.squeeze(0)  # (H, W)
+            gt_depth = viewpoint_cam.gt_depth  # (H, W)
+
+            # Exclude background (depth=0)
+            valid_mask = (gt_depth > 0.0).float()
+            num_valid = valid_mask.sum()
+
+            if num_valid > 100:
+                depth_error = torch.abs(rendered_depth - gt_depth) * valid_mask
+                gt_depth_loss = depth_error.sum() / num_valid
+                loss = loss + opt.lambda_gt_depth * gt_depth_loss
 
         # multi-view loss
         if iteration > opt.regularization_from_iter:
@@ -234,6 +254,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ema_multi_view_geo_for_log = 0.4 * geo_loss.item() if geo_loss is not None else 0.0 + 0.6 * ema_multi_view_geo_for_log
             ema_multi_view_pho_for_log = 0.4 * ncc_loss.item() if ncc_loss is not None else 0.0 + 0.6 * ema_multi_view_pho_for_log
             ema_tgpc_loss_for_log = 0.4 * tgpc_loss.item() if tgpc_loss is not None else 0.0 + 0.6 * ema_tgpc_loss_for_log
+            ema_gt_depth_loss_for_log = 0.4 * gt_depth_loss.item() + 0.6 * ema_gt_depth_loss_for_log
             if iteration % 10 == 0:
                 loss_dict = {
                     "Loss": f"{ema_loss_for_log:.{4}f}",
@@ -241,6 +262,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     "Geo": f"{ema_multi_view_geo_for_log:.{8}f}",
                     "Pho": f"{ema_multi_view_pho_for_log:.{8}f}",
                     "TGPC": f"{ema_tgpc_loss_for_log:.{8}f}",
+                    "GTD": f"{ema_gt_depth_loss_for_log:.{8}f}",
                     "Points": f"{len(gaussians.get_xyz)}"
                 }
                 progress_bar.set_postfix(loss_dict)

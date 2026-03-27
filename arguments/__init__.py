@@ -55,6 +55,11 @@ class ModelParams(ParamGroup):
         self.multi_view_min_dis = 0.01
         self.multi_view_max_dis = 1.5
 
+        # GT depth supervision
+        self.use_gt_depth = False
+        self.depth_dir = ""
+        self.depth_scale = 0.01
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -103,6 +108,9 @@ class OptimizationParams(ParamGroup):
         self.tgpc_num_neighbors = 12
 
         self.exposure_compensation = False
+
+        # GT depth supervision
+        self.lambda_gt_depth = 0.1
 
         super().__init__(parser, "Optimization Parameters")
 

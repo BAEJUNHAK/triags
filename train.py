@@ -185,7 +185,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             num_valid = valid_mask.sum()
 
             if num_valid > 100:
-                depth_error = torch.abs(rendered_depth - gt_depth) * valid_mask
+                depth_error = (torch.abs(rendered_depth - gt_depth) / gt_depth.clamp(min=1.0)) * valid_mask
                 gt_depth_loss = depth_error.sum() / num_valid
                 loss = loss + opt.lambda_gt_depth * gt_depth_loss
 

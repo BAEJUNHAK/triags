@@ -173,9 +173,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 
-        # GT depth supervision
+        # GT depth supervision (curriculum: ON from 15k, OFF after 25k)
         gt_depth_loss = torch.tensor(0.0, device="cuda")
-        if use_gt_depth and reg_kick_on and viewpoint_cam.gt_depth is not None:
+        gt_depth_until_iter = opt.regularization_from_iter + 10000  # 25000
+        if use_gt_depth and reg_kick_on and iteration <= gt_depth_until_iter and viewpoint_cam.gt_depth is not None:
             rendered_expected_depth = render_pkg["expected_depth"]
             rendered_depth = rendered_expected_depth.squeeze(0)  # (H, W)
             gt_depth = viewpoint_cam.gt_depth  # (H, W)

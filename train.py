@@ -134,7 +134,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         reg_kick_on = iteration >= opt.regularization_from_iter
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size, require_coord = require_coord and reg_kick_on, require_depth = (require_depth or use_gt_depth) and reg_kick_on, app_model=app_model)
+        # GT depth needs depth rendering from densify_from_iter, other losses need it from regularization_from_iter
+        need_depth = (require_depth and reg_kick_on) or (use_gt_depth and iteration >= opt.densify_from_iter)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size, require_coord = require_coord and reg_kick_on, require_depth = need_depth, app_model=app_model)
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
                                                                     render_pkg["render"],
@@ -173,21 +175,27 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 
-        # GT depth supervision (curriculum: ON from 15k, OFF after 25k)
+        # GT depth supervision (median-aligned L1, densification phase only)
         gt_depth_loss = torch.tensor(0.0, device="cuda")
-        gt_depth_until_iter = opt.regularization_from_iter + 10000  # 25000
-        if use_gt_depth and reg_kick_on and iteration <= gt_depth_until_iter and viewpoint_cam.gt_depth is not None:
-            rendered_expected_depth = render_pkg["expected_depth"]
-            rendered_depth = rendered_expected_depth.squeeze(0)  # (H, W)
-            gt_depth = viewpoint_cam.gt_depth  # (H, W)
+        if (use_gt_depth
+            and iteration >= opt.densify_from_iter
+            and iteration <= opt.densify_until_iter
+            and viewpoint_cam.gt_depth is not None):
+            rendered_depth = render_pkg["expected_depth"].squeeze(0)
+            gt_depth = viewpoint_cam.gt_depth
 
-            # Exclude background (depth=0)
-            valid_mask = (gt_depth > 0.0).float()
+            valid_mask = gt_depth > 0.0
             num_valid = valid_mask.sum()
 
             if num_valid > 100:
-                depth_error = (torch.abs(rendered_depth - gt_depth) / gt_depth.clamp(min=1.0)) * valid_mask
-                gt_depth_loss = depth_error.sum() / num_valid
+                pred_valid = rendered_depth[valid_mask]
+                gt_valid = gt_depth[valid_mask]
+
+                # Per-image median alignment (detach to prevent scale gaming)
+                scale = (torch.median(pred_valid) / torch.median(gt_valid)).detach()
+                aligned_gt = gt_valid * scale
+
+                gt_depth_loss = torch.nn.functional.l1_loss(pred_valid, aligned_gt)
                 loss = loss + opt.lambda_gt_depth * gt_depth_loss
 
         # multi-view loss

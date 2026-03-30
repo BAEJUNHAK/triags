@@ -134,7 +134,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         reg_kick_on = iteration >= opt.regularization_from_iter
 
-        gt_depth_this_iter = use_gt_depth and reg_kick_on and iteration % 3 == 0
+        gt_depth_this_iter = use_gt_depth and reg_kick_on and iteration % 5 == 0
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size, require_coord = require_coord and reg_kick_on, require_depth = (require_depth or gt_depth_this_iter) and reg_kick_on, app_model=app_model)
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
@@ -174,11 +174,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 
-        # GT depth supervision (scale-invariant, every 3 iters for speed)
+        # GT depth supervision (scale-invariant absolute L1, every 5 iters)
         gt_depth_loss = torch.tensor(0.0, device="cuda")
         gt_depth_until_iter = opt.regularization_from_iter + 10000  # 25000
         if (use_gt_depth and reg_kick_on and iteration <= gt_depth_until_iter
-            and iteration % 3 == 0 and viewpoint_cam.gt_depth is not None):
+            and iteration % 5 == 0 and viewpoint_cam.gt_depth is not None):
             rendered_depth = render_pkg["expected_depth"].squeeze(0)  # (H, W)
             gt_depth = viewpoint_cam.gt_depth  # (H, W)
 
@@ -189,17 +189,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 pred_valid = rendered_depth[valid_mask]
                 gt_valid = gt_depth[valid_mask]
 
-                # Pixel sampling for speed (use 25% of valid pixels)
-                if num_valid > 4000:
-                    sample_idx = torch.randperm(num_valid, device=pred_valid.device)[:num_valid // 4]
+                # Pixel sampling for speed (use 10% of valid pixels)
+                if num_valid > 2000:
+                    sample_idx = torch.randperm(num_valid, device=pred_valid.device)[:num_valid // 10]
                     pred_valid = pred_valid[sample_idx]
                     gt_valid = gt_valid[sample_idx]
 
-                # Scale-invariant: align pred to gt scale, detach to prevent scale gaming
+                # Scale-invariant absolute L1
                 scale = (torch.median(gt_valid) / torch.median(pred_valid)).detach()
                 aligned_pred = pred_valid * scale
 
-                gt_depth_loss = (torch.abs(aligned_pred - gt_valid) / gt_valid.clamp(min=1.0)).mean()
+                gt_depth_loss = torch.abs(aligned_pred - gt_valid).mean()
                 loss = loss + opt.lambda_gt_depth * gt_depth_loss
 
         # multi-view loss

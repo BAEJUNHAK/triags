@@ -175,11 +175,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 
         # GT depth supervision (scale-invariant absolute L1, every 5 iters)
-        # Full duration with half weight after 25k
         gt_depth_loss = torch.tensor(0.0, device="cuda")
-        if (use_gt_depth and reg_kick_on
+        gt_depth_until_iter = opt.regularization_from_iter + 10000  # 25000
+        if (use_gt_depth and reg_kick_on and iteration <= gt_depth_until_iter
             and iteration % 5 == 0 and viewpoint_cam.gt_depth is not None):
-            gt_depth_decay = 0.5 if iteration > opt.regularization_from_iter + 10000 else 1.0
             rendered_depth = render_pkg["expected_depth"].squeeze(0)  # (H, W)
             gt_depth = viewpoint_cam.gt_depth  # (H, W)
 
@@ -201,7 +200,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 aligned_pred = pred_valid * scale
 
                 gt_depth_loss = torch.abs(aligned_pred - gt_valid).mean()
-                loss = loss + opt.lambda_gt_depth * gt_depth_decay * gt_depth_loss
+                loss = loss + opt.lambda_gt_depth * gt_depth_loss
 
         # multi-view loss
         if iteration > opt.regularization_from_iter:

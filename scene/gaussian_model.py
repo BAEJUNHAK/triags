@@ -215,7 +215,10 @@ class GaussianModel:
             if focal_length < focal_x:
                 focal_length = focal_x
 
-        distance[~valid_points] = distance[valid_points].max()
+        if valid_points.any():
+            distance[~valid_points] = distance[valid_points].max()
+        else:
+            distance[:] = 0.3  # fallback: no valid points visible
 
         #TODO remove hard coded value
         #TODO box to gaussian transform
@@ -276,7 +279,10 @@ class GaussianModel:
             if focal_length < focal_x:
                 focal_length = focal_x
 
-        distance[~valid_points] = distance[valid_points].max()
+        if valid_points.any():
+            distance[~valid_points] = distance[valid_points].max()
+        else:
+            distance[:] = 0.3  # fallback: no valid points visible
 
         #TODO remove hard coded value
         #TODO box to gaussian transform

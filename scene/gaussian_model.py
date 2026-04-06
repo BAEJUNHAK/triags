@@ -492,7 +492,7 @@ class GaussianModel:
     def reset_opacity(self):
         # reset opacity to by considering 3D filter
         current_opacity_with_filter = self.get_opacity_with_3D_filter
-        opacities_new = torch.min(current_opacity_with_filter, torch.ones_like(current_opacity_with_filter)*0.055)
+        opacities_new = torch.min(current_opacity_with_filter, torch.ones_like(current_opacity_with_filter)*0.06)
 
         # apply 3D filter
         scales = self.get_scaling

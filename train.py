@@ -146,6 +146,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration > 1000 and opt.exposure_compensation:
             gaussians.use_app = True
 
+        # Object mask for depth-normal loss (background excluded)
+        # RGB masking is unnecessary: input images already have black background (depth>0 mask applied at data prep)
+        obj_mask = None
+        if use_gt_depth and viewpoint_cam.gt_depth is not None:
+            obj_mask = (viewpoint_cam.gt_depth > 0).float()  # (H, W)
+
         if dataset.use_decoupled_appearance:
             Ll1_render = L1_loss_appearance(rendered_image, gt_image, gaussians, viewpoint_cam.uid)
         else:
@@ -165,7 +171,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 depth_middepth_normal = point_double_to_normal(viewpoint_cam, rendered_expected_coord, rendered_median_coord)
             depth_ratio = 0.6
             normal_error_map = (1 - (rendered_normal.unsqueeze(0) * depth_middepth_normal).sum(dim=1))
-            depth_normal_loss = (1-depth_ratio) * normal_error_map[0].mean() + depth_ratio * normal_error_map[1].mean()
+            # Apply object mask to depth-normal loss (exclude background)
+            if obj_mask is not None:
+                obj_mask_bool = obj_mask.bool()
+                depth_normal_loss = (1-depth_ratio) * normal_error_map[0][obj_mask_bool].mean() + depth_ratio * normal_error_map[1][obj_mask_bool].mean()
+            else:
+                depth_normal_loss = (1-depth_ratio) * normal_error_map[0].mean() + depth_ratio * normal_error_map[1].mean()
         else:
             lambda_depth_normal = 0
             depth_normal_loss = torch.tensor([0],dtype=torch.float32,device="cuda")

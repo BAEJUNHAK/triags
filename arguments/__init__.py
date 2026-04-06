@@ -104,7 +104,7 @@ class OptimizationParams(ParamGroup):
         self.multi_view_sample_num = 102400
         self.multi_view_pixel_noise_th = 1.0
 
-        self.tgpc_loss_weight = 0.1
+        self.tgpc_loss_weight = 0.01
         self.tgpc_num_neighbors = 12
 
         self.exposure_compensation = False

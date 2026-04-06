@@ -187,7 +187,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # GT depth supervision (scale-invariant absolute L1, every 5 iters)
         gt_depth_loss = torch.tensor(0.0, device="cuda")
-        gt_depth_until_iter = 25000
+        gt_depth_until_iter = opt.regularization_from_iter  # 15000: Phase 1 only
         if (use_gt_depth and iteration <= gt_depth_until_iter
             and iteration % 5 == 0 and viewpoint_cam.gt_depth is not None):
             rendered_depth = render_pkg["expected_depth"].squeeze(0)  # (H, W)

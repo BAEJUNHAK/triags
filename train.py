@@ -307,10 +307,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # With background-removed images, use very low opacity threshold:
-                    # - No opacity reset → Gaussians keep their learned opacity
-                    # - Only prune nearly invisible ones (opacity < 0.005)
-                    # - Prevents unbounded growth from clone/split
+                    # With background-removed images, use low opacity threshold (0.005):
+                    # - opacity_reset sets all to 0.01, which is > 0.005 → safe
+                    # - Only prune Gaussians that fail to recover after reset
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     if dataset.disable_filter3D:
@@ -318,9 +317,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     else:
                         gaussians.compute_3D_filter(cameras=trainCameras)
 
-                # Opacity reset disabled for background-removed images
-                # if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                #     gaussians.reset_opacity()
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
 
             if iteration % 100 == 0 and iteration > opt.densify_until_iter and not dataset.disable_filter3D:
                 if iteration < opt.iterations - 100:

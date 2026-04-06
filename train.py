@@ -207,11 +207,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gt_valid = gt_valid[sample_idx]
 
                 # Scale-invariant absolute L1
-                scale = (torch.median(gt_valid) / torch.median(pred_valid)).detach()
-                aligned_pred = pred_valid * scale
+                median_pred = torch.median(pred_valid)
+                if median_pred > 1e-6:  # skip if rendered depth is near-zero (early iters)
+                    scale = (torch.median(gt_valid) / median_pred).detach()
+                    aligned_pred = pred_valid * scale
 
-                gt_depth_loss = torch.abs(aligned_pred - gt_valid).mean()
-                loss = loss + opt.lambda_gt_depth * gt_depth_loss
+                    gt_depth_loss = torch.abs(aligned_pred - gt_valid).mean()
+                    if torch.isfinite(gt_depth_loss):
+                        loss = loss + opt.lambda_gt_depth * gt_depth_loss
 
         # multi-view loss
         if iteration > opt.regularization_from_iter:

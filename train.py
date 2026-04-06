@@ -307,9 +307,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # opacity_reset disabled for background-removed images:
-                    # - reset(→0.01) + 12% gradient = Gaussians can't recover → mass pruning
-                    # - Without reset, learned opacity preserved; 0.05 controls clone/split growth
+                    # Original pipeline restored: opacity_reset(→0.06) + threshold(0.05)
+                    # Reset value changed from 0.01→0.06 so Gaussians survive reset
+                    # with sparse gradient (12% object coverage in BG-removed images)
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.05, scene.cameras_extent, size_threshold)
                     if dataset.disable_filter3D:
@@ -317,10 +317,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     else:
                         gaussians.compute_3D_filter(cameras=trainCameras)
 
-                # opacity_reset disabled: incompatible with background-removed training
-                # (12% object coverage → insufficient gradient to recover from reset)
-                # if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                #     gaussians.reset_opacity()
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
 
             if iteration % 100 == 0 and iteration > opt.densify_until_iter and not dataset.disable_filter3D:
                 if iteration < opt.iterations - 100:

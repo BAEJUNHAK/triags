@@ -146,8 +146,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration > 1000 and opt.exposure_compensation:
             gaussians.use_app = True
 
-        # Object mask for depth-normal loss (background excluded)
-        # RGB masking is unnecessary: input images already have black background (depth>0 mask applied at data prep)
+        # Object mask from GT depth (foreground = depth > 0)
         obj_mask = None
         if use_gt_depth and viewpoint_cam.gt_depth is not None:
             obj_mask = (viewpoint_cam.gt_depth > 0).float()  # (H, W)
@@ -156,6 +155,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             Ll1_render = L1_loss_appearance(rendered_image, gt_image, gaussians, viewpoint_cam.uid)
         else:
             Ll1_render = l1_loss(rendered_image, gt_image)
+
+        # Apply object mask to RGB loss (exclude background)
+        if obj_mask is not None:
+            obj_mask_3ch = obj_mask.unsqueeze(0)  # (1, H, W) for broadcasting with (3, H, W)
+            Ll1_render = (torch.abs(rendered_image - gt_image) * obj_mask_3ch).sum() / obj_mask_3ch.sum().clamp(min=1) / 3
 
         if reg_kick_on:
             lambda_depth_normal = opt.lambda_depth_normal
@@ -181,7 +185,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             lambda_depth_normal = 0
             depth_normal_loss = torch.tensor([0],dtype=torch.float32,device="cuda")
 
-        rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image, gt_image.unsqueeze(0)))
+        if obj_mask is not None:
+            obj_mask_4d = obj_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+            rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image * obj_mask.unsqueeze(0), gt_image.unsqueeze(0) * obj_mask_4d))
+        else:
+            rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image, gt_image.unsqueeze(0)))
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 

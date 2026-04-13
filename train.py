@@ -156,11 +156,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         else:
             Ll1_render = l1_loss(rendered_image, gt_image)
 
-        # Apply object mask to RGB loss (exclude background)
-        if obj_mask is not None:
-            obj_mask_3ch = obj_mask.unsqueeze(0)  # (1, H, W) for broadcasting with (3, H, W)
-            Ll1_render = (torch.abs(rendered_image - gt_image) * obj_mask_3ch).sum() / obj_mask_3ch.sum().clamp(min=1) / 3
-
         if reg_kick_on:
             lambda_depth_normal = opt.lambda_depth_normal
             if require_depth:
@@ -185,11 +180,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             lambda_depth_normal = 0
             depth_normal_loss = torch.tensor([0],dtype=torch.float32,device="cuda")
 
-        if obj_mask is not None:
-            obj_mask_4d = obj_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
-            rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image * obj_mask.unsqueeze(0), gt_image.unsqueeze(0) * obj_mask_4d))
-        else:
-            rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image, gt_image.unsqueeze(0)))
+        rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image, gt_image.unsqueeze(0)))
 
         loss = rgb_loss + depth_normal_loss * lambda_depth_normal
 
@@ -318,7 +309,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     # opacity_reset(→0.06) + threshold(0.055): slightly more aggressive pruning
                     # 0.005 margin after reset for recovery
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.055, scene.cameras_extent, size_threshold)
+                    MAX_POINTS = 3_000_000
+                    if gaussians.get_xyz.shape[0] > MAX_POINTS:
+                        # Too many points — skip clone/split, only prune
+                        prune_mask = (gaussians.get_opacity < 0.055).squeeze()
+                        if size_threshold:
+                            big_points_vs = gaussians.max_radii2D > size_threshold
+                            big_points_ws = gaussians.get_scaling.max(dim=1).values > 0.1 * scene.cameras_extent
+                            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+                        gaussians.prune_points(prune_mask)
+                    else:
+                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.055, scene.cameras_extent, size_threshold)
                     if dataset.disable_filter3D:
                         gaussians.reset_3D_filter()
                     else:
